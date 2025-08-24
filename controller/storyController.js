@@ -42,6 +42,37 @@ class StoryController {
     }
   }
 
+  async deleteUnconfirmedAppointments(req, res) {
+    try {
+      const startOfDay = moment().startOf("day").toDate();
+      const endOfDay = moment().endOf("day").toDate();
+
+      const result = await storyDB.deleteMany({
+        status: "unconfirmed",
+        createdAt: {
+          $gte: startOfDay,
+          $lte: endOfDay,
+        },
+      });
+
+      if (result.deletedCount === 0) {
+        return response.notFound(
+          res,
+          "Bugungi kunda tasdiqlanmagan uchrashuvlar topilmadi.",
+          result.deletedCount
+        );
+      }
+
+      return response.success(
+        res,
+        `${result.deletedCount} ta tasdiqlanmagan uchrashuv oʻchirildi.`,
+        result.deletedCount
+      );
+    } catch (error) {
+      return response.serverError(res, error.message, error);
+    }
+  }
+
   async getStoryByPatientAndDoctor(req, res) {
     try {
       const { patientId, doctorId } = req.params;
@@ -120,7 +151,7 @@ class StoryController {
 
       const stories = await storyDB
         .find({
-          createdAt: { $gte: startOfDay, $lte: endOfDay },
+          // createdAt: { $gte: startOfDay, $lte: endOfDay },
           view: false,
         })
         .sort({ createdAt: -1 })

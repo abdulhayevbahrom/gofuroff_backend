@@ -118,6 +118,7 @@ router.get("/story/redirected", patientController.getRedirectPatients);
  * ============================
  */
 router.get("/story/all", storyController.getStory);
+router.delete("/patients/unconfirmed", storyController.deleteUnconfirmedAppointments)
 router.get("/story/patient/:id", storyController.getStoryByPatientId);
 router.get("/story/doctor/:id", storyController.getStoryByDoctorId);
 router.put("/story/update/:id", storyController.updateStory);

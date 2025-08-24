@@ -5,20 +5,6 @@ const adminDB = require("../model/adminModel");
 const expenseModel = require("../model/expenseModel");
 
 class PatientController {
-  // Telefon raqam bo‘yicha bemorni olish
-  async getPatientByPhone(req, res) {
-    try {
-      const phone = req.params.phone.replace(/\s/g, "");
-      const patient = await patientsDB.findOne({ phone });
-      if (!patient) {
-        return response.notFound(res, "Bemor topilmadi");
-      }
-      return response.success(res, "Bemor topildi", patient);
-    } catch (err) {
-      return response.serverError(res, err.message, err);
-    }
-  }
-
   async createPatient(req, res) {
     let io = req.app.get("socket");
     const mongoose = require("mongoose");
@@ -38,7 +24,11 @@ class PatientController {
         services,
         doctorId,
         description,
+        createdAt,
+        isImmediate,
       } = req.body;
+
+      const appointmentTime = new Date(createdAt);
 
       // Telefon raqami orqali bemorni qidirish
       let patient = await patientsDB.findOne({ phone }).session(session);
@@ -67,23 +57,6 @@ class PatientController {
         return response.error(res, "doctorId is required");
       }
 
-      // Shu doktorga yozilgan, view: false bo'lgan storylarni sanash
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(today.getDate() + 1);
-
-      const count = await storyDB
-        .countDocuments({
-          doctorId: doctorId,
-          // view: 0,
-          createdAt: { $gte: today, $lt: tomorrow },
-        })
-        .session(session);
-
-      // order_number = navbat raqami
-      const orderNumber = count + 1;
-
       let doctor = await adminDB.findById(doctorId).session(session);
       if (!doctor) {
         await session.abortTransaction();
@@ -97,9 +70,36 @@ class PatientController {
         0
       );
 
-      // To'g'ri payment_status hisoblash
-      const paymentStatus =
-        payment_amount >= (doctor.admission_price || 0) + totalServicePrice;
+      let orderNumber = null;
+      let paymentStatus = false;
+      let finalPaymentAmount = 0;
+
+      if (isImmediate) {
+        // Shu doktorga yozilgan, view: false bo'lgan storylarni sanash
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(today.getDate() + 1);
+
+        const count = await storyDB
+          .countDocuments({
+            doctorId: doctorId,
+            createdAt: { $gte: today, $lt: tomorrow },
+          })
+          .session(session);
+
+        // order_number = navbat raqami
+        orderNumber = count + 1;
+
+        // To'g'ri payment_status hisoblash
+        paymentStatus =
+          payment_amount >= (doctor.admission_price || 0) + totalServicePrice;
+
+        finalPaymentAmount = payment_amount;
+      } else {
+        // Future appointment: no order number, no payment required now
+        finalPaymentAmount = 0;
+      }
 
       // Story yaratish
       const story = await storyDB.create(
@@ -110,35 +110,42 @@ class PatientController {
             order_number: orderNumber,
             paymentType,
             payment_status: paymentStatus,
-            payment_amount,
+            payment_amount: finalPaymentAmount,
             services: services || [],
             description: description || "",
+            startTime: appointmentTime,
+            createdAt: appointmentTime,
           },
         ],
         { session }
       );
       const createdStory = story[0];
 
-      await expenseModel.create(
-        [
-          {
-            name: "Bemor to'lovi",
-            amount: payment_amount,
-            type: "kirim",
-            category: "Bemor to'lovi",
-            description: "Bemor to'lovi",
-            paymentType: paymentType,
-            relevantId: createdStory._id,
-          },
-        ],
-        { session }
-      );
+      if (isImmediate) {
+        await expenseModel.create(
+          [
+            {
+              name: "Bemor to'lovi",
+              amount: finalPaymentAmount,
+              type: "kirim",
+              category: "Bemor to'lovi",
+              description: "Bemor to'lovi",
+              paymentType: paymentType,
+              relevantId: createdStory._id,
+            },
+          ],
+          { session }
+        );
+      }
 
       await session.commitTransaction();
       session.endSession();
 
-      io.emit("new_story", createdStory);
-      return response.success(res, "Bemor va story muvaffaqiyatli yaratildi", {
+      if (isImmediate) {
+        io.emit("new_story", createdStory);
+      }
+
+      const responseData = {
         patient: {
           firstname,
           lastname,
@@ -148,15 +155,20 @@ class PatientController {
           order_number: orderNumber,
           createdAt: createdStory.createdAt,
         },
-        doctor: {
+      };
+
+      if (isImmediate) {
+        responseData.doctor = {
           firstName: doctor.firstName,
           lastName: doctor.lastName,
           specialization: doctor.specialization,
           phone: phone,
           admission_price: totalServicePrice,
-        },
-        services: services || [],
-      });
+        };
+        responseData.services = services || [];
+      }
+
+      return response.success(res, "Bemor va story muvaffaqiyatli yaratildi", responseData);
     } catch (err) {
       await session.abortTransaction();
       session.endSession();
@@ -165,6 +177,21 @@ class PatientController {
     }
   }
 
+
+
+  // Telefon raqam bo‘yicha bemorni olish
+  async getPatientByPhone(req, res) {
+    try {
+      const phone = req.params.phone.replace(/\s/g, "");
+      const patient = await patientsDB.findOne({ phone });
+      if (!patient) {
+        return response.notFound(res, "Bemor topilmadi");
+      }
+      return response.success(res, "Bemor topildi", patient);
+    } catch (err) {
+      return response.serverError(res, err.message, err);
+    }
+  }
   async getPatients(req, res) {
     try {
       const patients = await patientsDB.find().sort({ createdAt: -1 });
