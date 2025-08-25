@@ -200,7 +200,7 @@ class StoryController {
         .find({
           doctorId,
           view: false,
-          payment_status: true,
+          // payment_status: true,
           redirectStatus: false,
         })
         .populate("patientId")
