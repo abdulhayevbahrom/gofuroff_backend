@@ -4,6 +4,9 @@ const storyDB = require("../model/storyModel");
 const adminDB = require("../model/adminModel");
 const expenseModel = require("../model/expenseModel");
 
+const moment = require("moment-timezone");
+moment.tz.setDefault("Asia/Tashkent");
+
 class PatientController {
   async createPatient(req, res) {
     let io = req.app.get("socket");
@@ -28,7 +31,8 @@ class PatientController {
         isImmediate,
       } = req.body;
 
-      const appointmentTime = new Date(createdAt);
+      // const appointmentTime = new Date(createdAt);
+      const appointmentTime = moment(createdAt).format("YYYY-MM-DD HH:mm:ss");
 
       // Telefon raqami orqali bemorni qidirish
       let patient = await patientsDB.findOne({ phone }).session(session);
@@ -76,10 +80,14 @@ class PatientController {
 
       if (isImmediate) {
         // Shu doktorga yozilgan,  storylarni sanash
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const tomorrow = new Date(today);
-        tomorrow.setDate(today.getDate() + 1);
+        // const today = new Date();
+        // today.setHours(0, 0, 0, 0);
+        // const tomorrow = new Date(today);
+        // tomorrow.setDate(today.getDate() + 1);
+
+        // Bugungi sanani Toshkent vaqtida olish
+        const today = moment().tz("Asia/Tashkent").startOf("day").toDate();
+        const tomorrow = moment().tz("Asia/Tashkent").endOf("day").toDate();
 
         const count = await storyDB
           .countDocuments({
@@ -406,10 +414,13 @@ class PatientController {
       );
 
       // Navbat raqamini hisoblash
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(today.getDate() + 1);
+      // const today = new Date();
+      // today.setHours(0, 0, 0, 0);
+      // const tomorrow = new Date(today);
+      // tomorrow.setDate(today.getDate() + 1);
+
+      const today = moment().tz("Asia/Tashkent").startOf("day").toDate();
+      const tomorrow = moment().tz("Asia/Tashkent").endOf("day").toDate();
 
       // const count = await storyDB
       //   .countDocuments({
@@ -423,7 +434,7 @@ class PatientController {
       const latestStory = await storyDB
         .findOne({
           doctorId: story.doctorId._id,
-          createdAt: { $gte: today, $lt: tomorrow },
+          createdAt: { $gte: today, $lte: tomorrow },
         })
         .sort({ order_number: -1 })
         .session(session);

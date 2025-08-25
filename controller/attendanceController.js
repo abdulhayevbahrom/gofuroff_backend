@@ -2,7 +2,11 @@ const Attendance = require("../model/attendanceModal");
 const Admin = require("../model/adminModel");
 const Clinic = require("../model/clinicInfo");
 const response = require("../utils/response");
-const { login } = require("./adminController");
+
+const moment = require("moment-timezone");
+moment.tz.setDefault("Asia/Tashkent");
+
+// Scan caching to prevent multiple scans within short time
 
 let scanCache = new Map();
 let CACHE_TIMEOUT = 10 * 60 * 1000; // 10 minutes
@@ -35,7 +39,7 @@ class AttendanceController {
         },
       };
 
-      let day = new Date().getDay();
+      let day = moment().day();
       let dayNames = [
         "sunday",
         "monday",
@@ -50,8 +54,12 @@ class AttendanceController {
         return response.error(res, "Bugun ish kuni emas");
       }
 
-      const today = new Date().toISOString().split("T")[0];
-      const currentTime = new Date();
+      // const today = new Date().toISOString().split("T")[0];
+      // const currentTime = new Date();
+      const today = moment().format("YYYY-MM-DD");
+      const currentTime = moment().toDate();
+
+      // Avvalgi kelish yoki ketish yozuvini tekshirish
 
       const attendance = await Attendance.findOne({
         employee_id: employee._id,
@@ -223,7 +231,10 @@ class AttendanceController {
   static async getDailyReport(req, res) {
     try {
       const { date } = req.query;
-      const targetDate = date || new Date().toISOString().split("T")[0];
+      // Asia/Tashkent bo'yicha sanani aniqlash
+      const targetDate = date
+        ? moment.tz(date, "YYYY-MM-DD", "Asia/Tashkent").format("YYYY-MM-DD")
+        : moment.tz("Asia/Tashkent").format("YYYY-MM-DD");
 
       const attendances = await Attendance.find({ date: targetDate })
         .populate(

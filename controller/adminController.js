@@ -4,6 +4,7 @@ const adminsDB = require("../model/adminModel");
 const storiesDB = require("../model/storyModel");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const moment = require("moment-timezone");
 
 class AdminController {
   // Barcha adminlarni olish (Read - All)
@@ -24,10 +25,13 @@ class AdminController {
   async getAdminsForReception(req, res) {
     try {
       // Bugungi sana chegaralari
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(today.getDate() + 1);
+      // const today = new Date();
+      // today.setHours(0, 0, 0, 0);
+      // const tomorrow = new Date(today);
+      // tomorrow.setDate(today.getDate() + 1);
+      // Bugungi sanani Toshkent vaqtida olish
+      const today = moment().tz("Asia/Tashkent").startOf("day").toDate();
+      const tomorrow = moment().tz("Asia/Tashkent").endOf("day").toDate();
 
       // Aggregation pipeline
       const result = await adminsDB.aggregate([
@@ -312,9 +316,13 @@ class AdminController {
     try {
       const { id } = req.params;
       // Bugungi kunning boshlanishi va tugashi
-      const today = new Date();
-      const startOfDay = new Date(today.setHours(0, 0, 0, 0));
-      const endOfDay = new Date(today.setHours(23, 59, 59, 999));
+      // const today = new Date();
+      // const startOfDay = new Date(today.setHours(0, 0, 0, 0));
+      // const endOfDay = new Date(today.setHours(23, 59, 59, 999));
+
+      // Bugungi sanani Toshkent vaqtida olish
+      const startOfDay = moment().tz("Asia/Tashkent").startOf("day").toDate();
+      const endOfDay = moment().tz("Asia/Tashkent").endOf("day").toDate();
 
       // Bugun yaratilgan story lar va doctorId mavjud bo'lganlar
       const todayStories = await storiesDB.find({

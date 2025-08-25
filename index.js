@@ -2,6 +2,9 @@ require("dotenv").config();
 const express = require("express");
 const connectDB = require("./config/dbConfig"); // yoki ./utils/connect
 const cors = require("cors");
+const mongoose = require("mongoose"); // ⬅️ qo‘shamiz
+const applyTimezone = require("./model/mongoose-timezone"); // ⬅️ pluginni chaqiramiz
+
 const PORT = process.env.PORT || 8040;
 const notfound = require("./middleware/notfound.middleware");
 const router = require("./routes/router");
@@ -26,6 +29,9 @@ const corsOptions = {
   credentials: true,
 };
 app.use(cors(corsOptions));
+
+// ⬇️ Mongoose pluginni shu yerda ulaymiz
+mongoose.plugin(applyTimezone);
 
 (async () => {
   await connectDB();

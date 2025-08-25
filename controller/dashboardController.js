@@ -1,9 +1,11 @@
 const Admin = require("../model/adminModel");
 const RoomStory = require("../model/roomStoryModel");
-const moment = require("moment");
+const moment = require("moment-timezone");
 const response = require("../utils/response");
 const Stories = require("../model/storyModel");
 const Expenses = require("../model/expenseModel");
+
+moment.tz.setDefault("Asia/Tashkent");
 
 async function getDashboard(req, res) {
   try {

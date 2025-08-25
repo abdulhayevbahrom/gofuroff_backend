@@ -1,9 +1,10 @@
 const Room = require("../model/roomModel");
 const response = require("../utils/response");
 const RoomStory = require("../model/roomStoryModel");
-const moment = require("moment");
 const Expense = require("../model/expenseModel");
 const mongoose = require("mongoose");
+const moment = require("moment-timezone");
+moment.tz.setDefault("Asia/Tashkent");
 
 class RoomController {
   async createRoom(req, res) {

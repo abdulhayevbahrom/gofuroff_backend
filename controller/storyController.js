@@ -3,7 +3,8 @@ const storyDB = require("../model/storyModel");
 const PatientModel = require("../model/patientModel");
 const Labaratory = require("../model/labaratoryModel");
 const RoomStoryModel = require("../model/roomStoryModel");
-const moment = require("moment");
+const moment = require("moment-timezone");
+moment.tz.setDefault("Asia/Tashkent");
 
 class StoryController {
   async getStory(req, res) {
@@ -13,17 +14,23 @@ class StoryController {
 
       if (req.query.startDay && req.query.endDay) {
         // Agar frontenddan startDay va endDay kelsa, shu oraliqni olamiz
-        startDay = new Date(req.query.startDay);
-        startDay.setHours(0, 0, 0, 0);
-        endDay = new Date(req.query.endDay);
-        endDay.setHours(23, 59, 59, 999);
+        const startOfDay = moment().tz("Asia/Tashkent").startOf("day").toDate();
+        const endOfDay = moment().tz("Asia/Tashkent").endOf("day").toDate();
       } else {
         // Aks holda, oxirgi 7 kunni olamiz
-        endDay = new Date();
-        endDay.setHours(23, 59, 59, 999);
-        startDay = new Date();
-        startDay.setDate(endDay.getDate() - 6);
-        startDay.setHours(0, 0, 0, 0);
+        // endDay = new Date();
+        // endDay.setHours(23, 59, 59, 999);
+        // startDay = new Date();
+        // startDay.setDate(endDay.getDate() - 6);
+        // startDay.setHours(0, 0, 0, 0);
+
+        // Aks holda, oxirgi 7 kunni olamiz
+        endDay = moment().tz("Asia/Tashkent").endOf("day").toDate();
+        startDay = moment()
+          .tz("Asia/Tashkent")
+          .subtract(7, "days")
+          .startOf("day")
+          .toDate();
       }
 
       filter.createdAt = { $gte: startDay, $lte: endDay };
@@ -174,11 +181,15 @@ class StoryController {
 
     try {
       // Bugungi sanani UTC formatida hisoblaymiz
-      const today = new Date();
-      today.setUTCHours(0, 0, 0, 0);
+      // const today = new Date();
+      // today.setUTCHours(0, 0, 0, 0);
 
-      const tomorrow = new Date(today);
-      tomorrow.setUTCDate(today.getUTCDate() + 1);
+      // const tomorrow = new Date(today);
+      // tomorrow.setUTCDate(today.getUTCDate() + 1);
+
+      // Bugungi sanani Toshkent vaqtida olish
+      const today = moment().tz("Asia/Tashkent").startOf("day").toDate();
+      const tomorrow = moment().tz("Asia/Tashkent").endOf("day").toDate();
 
       // Bugungi ko‘rilgan va ko‘rilmagan tashriflar sonini topamiz
       const todayViewedCount = await storyDB.countDocuments({
@@ -398,7 +409,7 @@ class StoryController {
         {
           $set: {
             view: true,
-            endTime: new Date(),
+            endTime: moment().format("YYYY-MM-DD HH:mm:ss"),
             retsept: {
               diagnosis: diagnosis?.trim() || "",
               prescription: validPrescriptions,
@@ -739,7 +750,7 @@ class StoryController {
       // Toggle the taken status and update timestamp if taken is set to true
       dose.taken = !dose.taken;
       if (dose.taken) {
-        dose.timestamp = new Date();
+        dose.timestamp = moment().format("YYYY-MM-DD HH:mm:ss");
         // Save workerId if provided
         if (workerId) {
           dose.workerId = workerId;

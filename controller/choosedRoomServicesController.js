@@ -3,6 +3,7 @@ const ChoosedRoomServices = require("../model/choosedRoomServices");
 const mongoose = require("mongoose");
 const response = require("../utils/response");
 const roomStoryModel = require("../model/roomStoryModel");
+const moment = require("moment-timezone");
 
 class RoomServicesController {
   // ✅ 1. Bemor uchun muolajalarni biriktirish
@@ -95,10 +96,14 @@ class RoomServicesController {
       if (!service)
         return response.notFound(res, "Ko'rsatilgan muolaja topilmadi");
 
-      const targetDate = new Date(date);
-      const existingIndex = service.dailyTracking.findIndex(
-        (d) => new Date(d.date).toDateString() === targetDate.toDateString()
-      );
+       const targetDate = moment
+         .tz(date, "YYYY-MM-DD", "Asia/Tashkent")
+         .toDate();
+         const existingIndex = service.dailyTracking.findIndex(
+           (d) =>
+             moment(d.date).tz("Asia/Tashkent").format("YYYY-MM-DD") ===
+             moment(targetDate).tz("Asia/Tashkent").format("YYYY-MM-DD")
+         );
 
       if (action === "remove") {
         // O'chirish
@@ -325,9 +330,14 @@ class RoomServicesController {
       if (!service)
         return response.notFound(res, "Ko'rsatilgan muolaja topilmadi");
 
-      const targetDate = new Date(date);
+      // Asia/Tashkent bo'yicha sana
+      const targetDate = moment
+        .tz(date, "YYYY-MM-DD", "Asia/Tashkent")
+        .toDate();
       const existingIndex = service.dailyTracking.findIndex(
-        (d) => new Date(d.date).toDateString() === targetDate.toDateString()
+        (d) =>
+          moment(d.date).tz("Asia/Tashkent").format("YYYY-MM-DD") ===
+          moment(targetDate).tz("Asia/Tashkent").format("YYYY-MM-DD")
       );
 
       if (action === "remove") {
