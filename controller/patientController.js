@@ -54,14 +54,14 @@ class PatientController {
       if (!doctorId) {
         await session.abortTransaction();
         session.endSession();
-        return response.error(res, "doctorId is required");
+        return response.error(res, "Doktor tanlanishi kerak");
       }
 
       let doctor = await adminDB.findById(doctorId).session(session);
       if (!doctor) {
         await session.abortTransaction();
         session.endSession();
-        return response.error(res, "Doctor not found");
+        return response.error(res, "Doktor topilmadi");
       }
 
       // Calculate total service price (if services provided)
@@ -75,7 +75,7 @@ class PatientController {
       let finalPaymentAmount = 0;
 
       if (isImmediate) {
-        // Shu doktorga yozilgan, view: false bo'lgan storylarni sanash
+        // Shu doktorga yozilgan,  storylarni sanash
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const tomorrow = new Date(today);
@@ -92,8 +92,7 @@ class PatientController {
         orderNumber = count + 1;
 
         // To'g'ri payment_status hisoblash
-        paymentStatus =
-          payment_amount >= (doctor.admission_price || 0) + totalServicePrice;
+        paymentStatus = payment_amount >= totalServicePrice;
 
         finalPaymentAmount = payment_amount;
       } else {
@@ -168,7 +167,11 @@ class PatientController {
         responseData.services = services || [];
       }
 
-      return response.success(res, "Bemor va story muvaffaqiyatli yaratildi", responseData);
+      return response.success(
+        res,
+        "Bemor va story muvaffaqiyatli yaratildi",
+        responseData
+      );
     } catch (err) {
       await session.abortTransaction();
       session.endSession();
@@ -176,8 +179,6 @@ class PatientController {
       return response.serverError(res, "Server error occurred", err.message);
     }
   }
-
-
 
   // Telefon raqam bo‘yicha bemorni olish
   async getPatientByPhone(req, res) {
@@ -410,14 +411,24 @@ class PatientController {
       const tomorrow = new Date(today);
       tomorrow.setDate(today.getDate() + 1);
 
-      const count = await storyDB
-        .countDocuments({
+      // const count = await storyDB
+      //   .countDocuments({
+      //     doctorId: story.doctorId._id,
+      //     // view: false,
+      //     createdAt: { $gte: today, $lt: tomorrow },
+      //   })
+      //   .session(session);
+      // const order_number = count + 1;
+
+      const latestStory = await storyDB
+        .findOne({
           doctorId: story.doctorId._id,
-          // view: false,
           createdAt: { $gte: today, $lt: tomorrow },
         })
+        .sort({ order_number: -1 })
         .session(session);
-      const order_number = count + 1;
+
+      const order_number = latestStory ? latestStory.order_number + 1 : 1;
 
       // Storyni yangilash
       story.paymentType = paymentType;
