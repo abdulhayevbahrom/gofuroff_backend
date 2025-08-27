@@ -7,7 +7,6 @@ const applyTimezone = require("./model/mongoose-timezone"); // ⬅️ pluginni c
 
 const PORT = process.env.PORT || 8040;
 const notfound = require("./middleware/notfound.middleware");
-
 const router = require("./routes/router");
 
 const authMiddleware = require("./middleware/AuthMiddleware");
