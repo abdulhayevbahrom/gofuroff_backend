@@ -118,7 +118,10 @@ router.get("/story/redirected", patientController.getRedirectPatients);
  * ============================
  */
 router.get("/story/all", storyController.getStory);
-router.delete("/patients/unconfirmed", storyController.deleteUnconfirmedAppointments)
+router.delete(
+  "/patients/unconfirmed",
+  storyController.deleteUnconfirmedAppointments
+);
 router.get("/story/patient/:id", storyController.getStoryByPatientId);
 router.get("/story/doctor/:id", storyController.getStoryByDoctorId);
 router.put("/story/update/:id", storyController.updateStory);
@@ -149,6 +152,9 @@ router.put(
   "/stories/:storyId/prescription/:prescriptionIndex/dose/:doseTrackingIndex/workerId/:workerId",
   storyController.updateDoseTaken
 );
+
+router.delete("/story/delete/:id", storyController.deleteStory);
+router.patch("/story/updateServices/:id", storyController.updateStoryServices);
 /**
  * ============================
  * Clinic Info Routes

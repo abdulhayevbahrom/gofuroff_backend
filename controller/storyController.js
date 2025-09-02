@@ -774,6 +774,36 @@ class StoryController {
       return response.serverError(res, err.message, err);
     }
   }
+
+  // delete story
+  async deleteStory(req, res) {
+    try {
+      const story = await storyDB.findByIdAndDelete(req.params.id);
+      if (!story) return response.notFound(res, "Bemor topilmadi");
+      return response.success(res, "Navbat o‘chirildi", story);
+    } catch (err) {
+      return response.serverError(res, err.message, err);
+    }
+  }
+
+  // update servises
+  async updateStoryServices(req, res) {
+    try {
+      const story = await storyDB.findByIdAndUpdate(
+        req.params.id,
+        {
+          services: req.body,
+        },
+        {
+          new: true,
+        }
+      );
+      if (!story) return response.notFound(res, "Bemor topilmadi");
+      return response.success(res, "Bemor yangilandi", story);
+    } catch (err) {
+      return response.serverError(res, err.message, err);
+    }
+  }
 }
 
 module.exports = new StoryController();
