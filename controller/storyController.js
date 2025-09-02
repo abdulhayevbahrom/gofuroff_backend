@@ -6,6 +6,9 @@ const RoomStoryModel = require("../model/roomStoryModel");
 const moment = require("moment-timezone");
 moment.tz.setDefault("Asia/Tashkent");
 
+const Expense = require("../model/expenseModel");
+const mongoose = require("mongoose");
+
 class StoryController {
   async getStory(req, res) {
     try {
@@ -777,30 +780,71 @@ class StoryController {
 
   // delete story
   async deleteStory(req, res) {
+    const session = await mongoose.startSession();
+    session.startTransaction();
     try {
-      const story = await storyDB.findByIdAndDelete(req.params.id);
-      if (!story) return response.notFound(res, "Bemor topilmadi");
+      const story = await storyDB.findByIdAndDelete(req.params.id, { session });
+
+      if (!story) {
+        await session.abortTransaction();
+        session.endSession();
+        return response.notFound(res, "Bemor topilmadi");
+      }
+
+      await Expense.findOneAndDelete(
+        { relevantId: req.params.id },
+        { session }
+      );
+
+      await session.commitTransaction();
+      session.endSession();
+
       return response.success(res, "Navbat o‘chirildi", story);
     } catch (err) {
+      await session.abortTransaction();
+      session.endSession();
       return response.serverError(res, err.message, err);
     }
   }
 
   // update servises
   async updateStoryServices(req, res) {
+    const session = await mongoose.startSession();
+    session.startTransaction();
     try {
+      let totalSum = req.body.reduce((acc, item) => acc + item.price, 0);
+
       const story = await storyDB.findByIdAndUpdate(
         req.params.id,
         {
           services: req.body,
+          payment_amount: totalSum,
         },
         {
           new: true,
+          session,
         }
       );
-      if (!story) return response.notFound(res, "Bemor topilmadi");
+
+      if (!story) {
+        await session.abortTransaction();
+        session.endSession();
+        return response.notFound(res, "Bemor topilmadi");
+      }
+
+      await Expense.findOneAndUpdate(
+        { relevantId: req.params.id },
+        { amount: totalSum },
+        { session }
+      );
+
+      await session.commitTransaction();
+      session.endSession();
+
       return response.success(res, "Bemor yangilandi", story);
     } catch (err) {
+      await session.abortTransaction();
+      session.endSession();
       return response.serverError(res, err.message, err);
     }
   }
