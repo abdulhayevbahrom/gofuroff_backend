@@ -38,6 +38,7 @@ async function getDashboard(req, res) {
       const allStories = await Stories.find({
         doctorId: doc._id,
         payment_status: true,
+        createdAt: { $gte: startDate, $lte: endDate },
       });
 
       const periodCount = periodStories.length;
