@@ -15,39 +15,20 @@ class ExpensesController {
     }
   }
 
+  // Backend remains the same (already handles req.query.startDate and endDate)
   async getExpenses(req, res) {
     try {
       let filter = {};
-      let startDate, endDate;
 
-      if (req.query.startDate && req.query.endDate) {
-        // startDate va endDate bo'lsa, shu oraliqni olamiz
-        // startDate = new Date(req.query.startDate);
-        // startDate.setHours(0, 0, 0, 0);
-        // endDate = new Date(req.query.endDate);
-        // endDate.setHours(23, 59, 59, 999);
-        startDate = moment(req.query.startDate).startOf("day").toDate();
-        endDate = moment(req.query.endDate).endOf("day").toDate();
-      } else {
-        // Aks holda, joriy oyning boshidan oxirigacha
-        // const now = new Date();
-        // startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        // endDate = new Date(
-        //   now.getFullYear(),
-        //   now.getMonth() + 1,
-        //   0,
-        //   23,
-        //   59,
-        //   59,
-        //   999
-        // );
-        startDate = moment().startOf("month").toDate();
-        endDate = moment().endOf("month").toDate();
-      }
+      let startDate = moment(req.query.startDate).startOf("day").toDate();
+      let endDate = moment(req.query.endDate).endOf("day").toDate();
+
 
       filter.createdAt = { $gte: startDate, $lte: endDate };
 
-      const expenses = await Expense.find(filter).sort({ createdAt: -1 });
+      const expenses = await Expense.find(filter)
+        .populate('relevantId') // relevantId ni populate qilish
+        .sort({ createdAt: -1 });
       if (!expenses.length)
         return response.notFound(res, "Xarajatlar topilmadi");
       return response.success(res, "Xarajatlar ro'yxati", expenses);

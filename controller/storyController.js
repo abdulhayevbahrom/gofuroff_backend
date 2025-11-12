@@ -154,22 +154,68 @@ class StoryController {
     }
   }
 
+  // async getTodaysStory(req, res) {
+  //   try {
+
+  //     const stories = await storyDB
+  //       .find(
+  //       // {
+  //       //   view: false,
+  //       // }
+  //     )
+  //       .sort({ createdAt: -1 })
+  //       .populate("patientId")
+  //       .populate("doctorId");
+
+  //     if (!stories.length) return response.notFound(res, "Bemorlar topilmadi");
+  //     return response.success(res, "Bemorlar topildi", stories);
+  //   } catch (err) {
+  //     return response.serverError(res, err.message, err);
+  //   }
+  // }
   async getTodaysStory(req, res) {
     try {
-      const startOfDay = moment().startOf("day").toDate();
-      const endOfDay = moment().endOf("day").toDate();
+      const { date, view } = req.query;
+      const filter = {};
 
+      // 🔹 Sana filtri
+      if (date) {
+        const startOfDay = moment(date).startOf("day").toDate();
+        const endOfDay = moment(date).endOf("day").toDate();
+        filter.createdAt = { $gte: startOfDay, $lte: endOfDay };
+      }
+
+      // 🔹 view bo‘yicha filter
+      if (view === "true") filter.view = true;
+      else if (view === "false") filter.view = false;
+
+      // 🔹 Asosiy ma’lumotlar
       const stories = await storyDB
-        .find({
-          // createdAt: { $gte: startOfDay, $lte: endOfDay },
-          view: false,
-        })
+        .find(filter)
         .sort({ createdAt: -1 })
         .populate("patientId")
         .populate("doctorId");
 
-      if (!stories.length) return response.notFound(res, "Bemorlar topilmadi");
-      return response.success(res, "Bemorlar topildi", stories);
+      // 🔹 Statistika (hamma yozuvlardan)
+      const baseFilter = { ...filter };
+      delete baseFilter.view;
+
+      const [allCount, korilganCount, korilmaganCount] = await Promise.all([
+        storyDB.countDocuments(baseFilter),
+        storyDB.countDocuments({ ...baseFilter, view: true }),
+        storyDB.countDocuments({ ...baseFilter, view: false }),
+      ]);
+
+      const counts = {
+        all: allCount,
+        korilgan: korilganCount,
+        korilmagan: korilmaganCount,
+      };
+
+      if (!stories.length && !allCount)
+        return response.notFound(res, "Bemorlar topilmadi");
+
+      return response.success(res, "Bemorlar topildi", { counts, stories });
     } catch (err) {
       return response.serverError(res, err.message, err);
     }

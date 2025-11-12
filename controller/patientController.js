@@ -13,7 +13,9 @@ class PatientController {
     const mongoose = require("mongoose");
     const session = await mongoose.startSession();
     session.startTransaction();
+
     try {
+      const moment = require("moment-timezone");
       let {
         firstname,
         lastname,
@@ -31,46 +33,26 @@ class PatientController {
         isImmediate,
       } = req.body;
 
-      // const appointmentTime = new Date(createdAt);
       const appointmentTime = moment(createdAt).format("YYYY-MM-DD HH:mm:ss");
 
-      // Telefon raqami orqali bemorni qidirish
+      // 🔹 Telefon orqali bemorni topish yoki yaratish
       let patient = await patientsDB.findOne({ phone }).session(session);
       if (!patient) {
-        patient = await patientsDB.create(
-          [
-            {
-              firstname,
-              lastname,
-              idNumber,
-              phone,
-              address,
-              year,
-              gender,
-            },
-          ],
+        const created = await patientsDB.create(
+          [{ firstname, lastname, idNumber, phone, address, year, gender }],
           { session }
         );
-        patient = patient[0];
+        patient = created[0];
       }
 
-      // Validate doctorId
-      if (!doctorId) {
-        await session.abortTransaction();
-        session.endSession();
-        return response.error(res, "Doktor tanlanishi kerak");
-      }
+      // 🔹 Doktorni tekshirish
+      if (!doctorId) throw new Error("Doktor tanlanishi kerak");
+      const doctor = await adminDB.findById(doctorId).session(session);
+      if (!doctor) throw new Error("Doktor topilmadi");
 
-      let doctor = await adminDB.findById(doctorId).session(session);
-      if (!doctor) {
-        await session.abortTransaction();
-        session.endSession();
-        return response.error(res, "Doktor topilmadi");
-      }
-
-      // Calculate total service price (if services provided)
+      // 🔹 Xizmat summasini hisoblash
       const totalServicePrice = (services || []).reduce(
-        (sum, service) => sum + (service.price || 0),
+        (sum, s) => sum + (s.price || 0),
         0
       );
 
@@ -79,37 +61,23 @@ class PatientController {
       let finalPaymentAmount = 0;
 
       if (isImmediate) {
-        // Shu doktorga yozilgan,  storylarni sanash
-        // const today = new Date();
-        // today.setHours(0, 0, 0, 0);
-        // const tomorrow = new Date(today);
-        // tomorrow.setDate(today.getDate() + 1);
-
-        // Bugungi sanani Toshkent vaqtida olish
         const today = moment().tz("Asia/Tashkent").startOf("day").toDate();
         const tomorrow = moment().tz("Asia/Tashkent").endOf("day").toDate();
 
         const count = await storyDB
           .countDocuments({
-            doctorId: doctorId,
+            doctorId,
             createdAt: { $gte: today, $lt: tomorrow },
           })
           .session(session);
 
-        // order_number = navbat raqami
         orderNumber = count + 1;
-
-        // To'g'ri payment_status hisoblash
         paymentStatus = payment_amount >= totalServicePrice;
-
         finalPaymentAmount = payment_amount;
-      } else {
-        // Future appointment: no order number, no payment required now
-        finalPaymentAmount = 0;
       }
 
-      // Story yaratish
-      const story = await storyDB.create(
+      // 🔹 Story yaratish
+      const [createdStory] = await storyDB.create(
         [
           {
             patientId: patient._id,
@@ -126,33 +94,40 @@ class PatientController {
         ],
         { session }
       );
-      const createdStory = story[0];
 
-      if (isImmediate) {
-        await expenseModel.create(
-          [
-            {
-              name: "Bemor to'lovi",
-              amount: finalPaymentAmount,
-              type: "kirim",
-              category: "Bemor to'lovi",
-              description: "Bemor to'lovi",
-              paymentType: paymentType,
-              relevantId: createdStory._id,
-            },
-          ],
-          { session }
-        );
+      // 🔹 Faqat bir marta expense yozish
+      if (isImmediate && finalPaymentAmount > 0) {
+        const existingExpense = await expenseModel
+          .findOne({
+            relevantId: createdStory._id,
+            category: "Bemor to'lovi",
+          })
+          .session(session);
+
+        if (!existingExpense) {
+          await expenseModel.create(
+            [
+              {
+                name: "Bemor to'lovi",
+                amount: finalPaymentAmount,
+                type: "kirim",
+                category: "Bemor to'lovi",
+                description: "Bemor to'lovi",
+                paymentType,
+                relevantId: createdStory._id,
+              },
+            ],
+            { session }
+          );
+        }
       }
 
       await session.commitTransaction();
       session.endSession();
 
-      if (isImmediate) {
-        io.emit("new_story", createdStory);
-      }
+      if (isImmediate) io.emit("new_story", createdStory);
 
-      const responseData = {
+      return response.success(res, "Bemor va story muvaffaqiyatli yaratildi", {
         patient: {
           firstname,
           lastname,
@@ -162,24 +137,17 @@ class PatientController {
           order_number: orderNumber,
           createdAt: createdStory.createdAt,
         },
-      };
-
-      if (isImmediate) {
-        responseData.doctor = {
-          firstName: doctor.firstName,
-          lastName: doctor.lastName,
-          specialization: doctor.specialization,
-          phone: phone,
-          admission_price: totalServicePrice,
-        };
-        responseData.services = services || [];
-      }
-
-      return response.success(
-        res,
-        "Bemor va story muvaffaqiyatli yaratildi",
-        responseData
-      );
+        doctor: isImmediate
+          ? {
+            firstName: doctor.firstName,
+            lastName: doctor.lastName,
+            specialization: doctor.specialization,
+            phone,
+            admission_price: totalServicePrice,
+          }
+          : undefined,
+        services: services || [],
+      });
     } catch (err) {
       await session.abortTransaction();
       session.endSession();
@@ -188,7 +156,192 @@ class PatientController {
     }
   }
 
+
+
+  // async createPatient(req, res) {
+  //   let io = req.app.get("socket");
+  //   const mongoose = require("mongoose");
+  //   const session = await mongoose.startSession();
+  //   session.startTransaction();
+  //   try {
+  //     let {
+  //       firstname,
+  //       lastname,
+  //       idNumber,
+  //       phone,
+  //       address,
+  //       year,
+  //       gender,
+  //       paymentType,
+  //       payment_amount,
+  //       services,
+  //       doctorId,
+  //       description,
+  //       createdAt,
+  //       isImmediate,
+  //     } = req.body;
+
+  //     // const appointmentTime = new Date(createdAt);
+  //     const appointmentTime = moment(createdAt).format("YYYY-MM-DD HH:mm:ss");
+
+  //     // Telefon raqami orqali bemorni qidirish
+  //     let patient = await patientsDB.findOne({ phone }).session(session);
+  //     if (!patient) {
+  //       patient = await patientsDB.create(
+  //         [
+  //           {
+  //             firstname,
+  //             lastname,
+  //             idNumber,
+  //             phone,
+  //             address,
+  //             year,
+  //             gender,
+  //           },
+  //         ],
+  //         { session }
+  //       );
+  //       patient = patient[0];
+  //     }
+
+  //     // Validate doctorId
+  //     if (!doctorId) {
+  //       await session.abortTransaction();
+  //       session.endSession();
+  //       return response.error(res, "Doktor tanlanishi kerak");
+  //     }
+
+  //     let doctor = await adminDB.findById(doctorId).session(session);
+  //     if (!doctor) {
+  //       await session.abortTransaction();
+  //       session.endSession();
+  //       return response.error(res, "Doktor topilmadi");
+  //     }
+
+  //     // Calculate total service price (if services provided)
+  //     const totalServicePrice = (services || []).reduce(
+  //       (sum, service) => sum + (service.price || 0),
+  //       0
+  //     );
+
+  //     let orderNumber = null;
+  //     let paymentStatus = false;
+  //     let finalPaymentAmount = 0;
+
+  //     if (isImmediate) {
+  //       // Shu doktorga yozilgan,  storylarni sanash
+  //       // const today = new Date();
+  //       // today.setHours(0, 0, 0, 0);
+  //       // const tomorrow = new Date(today);
+  //       // tomorrow.setDate(today.getDate() + 1);
+
+  //       // Bugungi sanani Toshkent vaqtida olish
+  //       const today = moment().tz("Asia/Tashkent").startOf("day").toDate();
+  //       const tomorrow = moment().tz("Asia/Tashkent").endOf("day").toDate();
+
+  //       const count = await storyDB
+  //         .countDocuments({
+  //           doctorId: doctorId,
+  //           createdAt: { $gte: today, $lt: tomorrow },
+  //         })
+  //         .session(session);
+
+  //       // order_number = navbat raqami
+  //       orderNumber = count + 1;
+
+  //       // To'g'ri payment_status hisoblash
+  //       paymentStatus = payment_amount >= totalServicePrice;
+
+  //       finalPaymentAmount = payment_amount;
+  //     } else {
+  //       // Future appointment: no order number, no payment required now
+  //       finalPaymentAmount = 0;
+  //     }
+
+  //     // Story yaratish
+  //     const story = await storyDB.create(
+  //       [
+  //         {
+  //           patientId: patient._id,
+  //           doctorId,
+  //           order_number: orderNumber,
+  //           paymentType,
+  //           payment_status: paymentStatus,
+  //           payment_amount: finalPaymentAmount,
+  //           services: services || [],
+  //           description: description || "",
+  //           startTime: appointmentTime,
+  //           createdAt: appointmentTime,
+  //         },
+  //       ],
+  //       { session }
+  //     );
+  //     const createdStory = story[0];
+
+  //     if (isImmediate) {
+  //       await expenseModel.create(
+  //         [
+  //           {
+  //             name: "Bemor to'lovi",
+  //             amount: finalPaymentAmount,
+  //             type: "kirim",
+  //             category: "Bemor to'lovi",
+  //             description: "Bemor to'lovi",
+  //             paymentType: paymentType,
+  //             relevantId: createdStory._id,
+  //           },
+  //         ],
+  //         { session }
+  //       );
+  //     }
+
+  //     await session.commitTransaction();
+  //     session.endSession();
+
+  //     if (isImmediate) {
+  //       io.emit("new_story", createdStory);
+  //     }
+
+  //     const responseData = {
+  //       patient: {
+  //         firstname,
+  //         lastname,
+  //         phone,
+  //         idNumber,
+  //         address,
+  //         order_number: orderNumber,
+  //         createdAt: createdStory.createdAt,
+  //       },
+  //     };
+
+  //     if (isImmediate) {
+  //       responseData.doctor = {
+  //         firstName: doctor.firstName,
+  //         lastName: doctor.lastName,
+  //         specialization: doctor.specialization,
+  //         phone: phone,
+  //         admission_price: totalServicePrice,
+  //       };
+  //       responseData.services = services || [];
+  //     }
+
+  //     return response.success(
+  //       res,
+  //       "Bemor va story muvaffaqiyatli yaratildi",
+  //       responseData
+  //     );
+  //   } catch (err) {
+  //     await session.abortTransaction();
+  //     session.endSession();
+  //     console.error("Error in createPatient:", err);
+  //     return response.serverError(res, "Server error occurred", err.message);
+  //   }
+  // }
+
   // Telefon raqam bo‘yicha bemorni olish
+
+
+
   async getPatientByPhone(req, res) {
     try {
       const phone = req.params.phone.replace(/\s/g, "");
