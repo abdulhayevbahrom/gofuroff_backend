@@ -221,69 +221,186 @@ class StoryController {
     }
   }
 
+  // async patientsByDoctor(req, res) {
+  //   const { doctorId } = req.params;
+  //   if (!doctorId) {
+  //     return response.notFound(res, "Doktor id talab qilinadi");
+  //   }
+
+  //   try {
+  //     // Bugungi sanani Toshkent vaqtida olish
+  //     const today = moment().tz("Asia/Tashkent").startOf("day").toDate();
+  //     const tomorrow = moment().tz("Asia/Tashkent").endOf("day").toDate();
+
+  //     // Bugungi ko‘rilgan va ko‘rilmagan tashriflar sonini topamiz
+  //     const todayViewedCount = await storyDB.countDocuments({
+  //       doctorId,
+  //       view: true,
+  //       createdAt: { $gte: today, $lt: tomorrow },
+  //     });
+
+  //     const todayUnviewedCount = await storyDB.countDocuments({
+  //       doctorId,
+  //       view: false,
+  //       createdAt: { $gte: today, $lt: tomorrow },
+  //       payment_status: true,
+  //       redirectStatus: false,
+  //     });
+
+  //     // Ko‘rilmagan bemorlarni topamiz
+  //     const stories = await storyDB
+  //       .find({
+  //         doctorId,
+  //         view: false,
+  //         // payment_status: true,
+  //         redirectStatus: false,
+  //       })
+  //       .populate("patientId")
+  //       .sort({ startTime: 1 });
+
+  //     const patients = [];
+
+  //     for (let story of stories) {
+  //       // Shu doctor va shu bemorga oid boshqa tarixlar
+  //       const visitHistoryData = await storyDB
+  //         .find({
+  //           doctorId,
+  //           patientId: story.patientId._id,
+  //           _id: { $ne: story._id }, // hozirgi yozuvdan tashqari
+  //         })
+  //         .sort({ startTime: -1 });
+
+  //       const visitHistory = visitHistoryData.map((item) => ({
+  //         date: item.startTime?.toISOString().split("T")[0],
+  //         diagnosis: item.sickname || "Nomaʼlum tashxis",
+  //       }));
+
+  //       patients.push({
+  //         _id: story._id,
+  //         doctorId: story.doctorId,
+  //         patientId: {
+  //           _id: story.patientId._id,
+  //           name: `${story.patientId.firstname} ${story.patientId.lastname}`,
+  //           age: new Date().getFullYear() - Number(story.patientId.year),
+  //           phone: story.patientId.phone,
+  //           height: story.patientId.height,
+  //           weight: story.patientId.weight,
+  //           bloodGroup: story.patientId.bloodGroup,
+  //           bmi: story.patientId.bmi,
+  //         },
+  //         paymentType: story.paymentType,
+  //         payment_status: story.payment_status,
+  //         payment_amount: story.payment_amount,
+  //         sickname: story.sickname,
+  //         view: story.view,
+  //         order_number: story.order_number,
+  //         startTime: story.startTime,
+  //         services: story.services,
+  //         visitHistory,
+  //         createdAt: story.createdAt,
+  //       });
+  //     }
+
+  //     const innerData = {
+  //       patients,
+  //       todayViewedCount,
+  //       todayUnviewedCount,
+  //     };
+
+  //     return response.success(res, "Bemorlar topildi", innerData);
+  //   } catch (err) {
+  //     console.log(err);
+
+  //     return response.serverError(res, err.message, err);
+  //   }
+  // }
+
   async patientsByDoctor(req, res) {
     const { doctorId } = req.params;
-
     if (!doctorId) {
       return response.notFound(res, "Doktor id talab qilinadi");
     }
 
     try {
-      // Bugungi sanani UTC formatida hisoblaymiz
-      // const today = new Date();
-      // today.setUTCHours(0, 0, 0, 0);
-
-      // const tomorrow = new Date(today);
-      // tomorrow.setUTCDate(today.getUTCDate() + 1);
-
       // Bugungi sanani Toshkent vaqtida olish
       const today = moment().tz("Asia/Tashkent").startOf("day").toDate();
       const tomorrow = moment().tz("Asia/Tashkent").endOf("day").toDate();
 
-      // Bugungi ko‘rilgan va ko‘rilmagan tashriflar sonini topamiz
-      const todayViewedCount = await storyDB.countDocuments({
-        doctorId,
-        view: true,
-        createdAt: { $gte: today, $lt: tomorrow },
-      });
+      // Parallel ravishda barcha querylarni ishga tushiramiz
+      const [todayViewedCount, todayUnviewedCount, stories] = await Promise.all(
+        [
+          // Bugungi ko'rilgan tashriflar soni
+          storyDB.countDocuments({
+            doctorId,
+            view: true,
+            createdAt: { $gte: today, $lt: tomorrow },
+          }),
 
-      const todayUnviewedCount = await storyDB.countDocuments({
-        doctorId,
-        view: false,
-        createdAt: { $gte: today, $lt: tomorrow },
-        payment_status: true,
-        redirectStatus: false,
-      });
+          // Bugungi ko'rilmagan tashriflar soni
+          storyDB.countDocuments({
+            doctorId,
+            view: false,
+            createdAt: { $gte: today, $lt: tomorrow },
+            payment_status: true,
+            redirectStatus: false,
+          }),
 
-      // Ko‘rilmagan bemorlarni topamiz
-      const stories = await storyDB
+          // Ko'rilmagan bemorlarni topamiz
+          storyDB
+            .find({
+              doctorId,
+              view: false,
+              redirectStatus: false,
+            })
+            .populate("patientId")
+            .sort({ startTime: 1 })
+            .lean(), // Plain JavaScript obyektlarini qaytaradi (tezroq)
+        ]
+      );
+
+      // Agar bemorlar bo'lmasa, darhol qaytaramiz
+      if (!stories || stories.length === 0) {
+        return response.success(res, "Bemorlar topildi", {
+          patients: [],
+          todayViewedCount,
+          todayUnviewedCount,
+        });
+      }
+
+      // Barcha bemorlar uchun bir marta visitHistory olish
+      const patientIds = stories.map((s) => s.patientId._id);
+      const storyIds = stories.map((s) => s._id);
+
+      // Bitta query bilan barcha visit historylarni olamiz
+      const allVisitHistories = await storyDB
         .find({
           doctorId,
-          view: false,
-          // payment_status: true,
-          redirectStatus: false,
+          patientId: { $in: patientIds },
+          _id: { $nin: storyIds },
         })
-        .populate("patientId")
-        .sort({ startTime: 1 });
+        .select("patientId startTime sickname")
+        .sort({ startTime: -1 })
+        .lean();
 
-      const patients = [];
-
-      for (let story of stories) {
-        // Shu doctor va shu bemorga oid boshqa tarixlar
-        const visitHistoryData = await storyDB
-          .find({
-            doctorId,
-            patientId: story.patientId._id,
-            _id: { $ne: story._id }, // hozirgi yozuvdan tashqari
-          })
-          .sort({ startTime: -1 });
-
-        const visitHistory = visitHistoryData.map((item) => ({
+      // Visit historylarni patientId bo'yicha guruhlaymiz
+      const visitHistoryMap = {};
+      allVisitHistories.forEach((item) => {
+        const patientIdStr = item.patientId.toString();
+        if (!visitHistoryMap[patientIdStr]) {
+          visitHistoryMap[patientIdStr] = [];
+        }
+        visitHistoryMap[patientIdStr].push({
           date: item.startTime?.toISOString().split("T")[0],
           diagnosis: item.sickname || "Nomaʼlum tashxis",
-        }));
+        });
+      });
 
-        patients.push({
+      // Natijani shakllantiramiz
+      const patients = stories.map((story) => {
+        const patientIdStr = story.patientId._id.toString();
+        const visitHistory = visitHistoryMap[patientIdStr] || [];
+
+        return {
           _id: story._id,
           doctorId: story.doctorId,
           patientId: {
@@ -306,8 +423,8 @@ class StoryController {
           services: story.services,
           visitHistory,
           createdAt: story.createdAt,
-        });
-      }
+        };
+      });
 
       const innerData = {
         patients,
@@ -317,6 +434,7 @@ class StoryController {
 
       return response.success(res, "Bemorlar topildi", innerData);
     } catch (err) {
+      console.error("Error in patientsByDoctor:", err);
       return response.serverError(res, err.message, err);
     }
   }
