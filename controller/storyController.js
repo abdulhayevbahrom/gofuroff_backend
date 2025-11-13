@@ -2,6 +2,8 @@ const response = require("../utils/response");
 const storyDB = require("../model/storyModel");
 const PatientModel = require("../model/patientModel");
 const Labaratory = require("../model/labaratoryModel");
+const ChoosedRoomServices = require("../model/choosedRoomServices");
+const RoomServicesStoryModel = require("../model/roomServicesModel");
 const RoomStoryModel = require("../model/roomStoryModel");
 const moment = require("moment-timezone");
 moment.tz.setDefault("Asia/Tashkent");
@@ -482,31 +484,110 @@ class StoryController {
     }
   }
 
+  // async getAllPatientsStory(req, res) {
+  //   try {
+  //     const patients = await PatientModel.find().lean().exec();
+  //     const patientIds = patients.map((patient) => patient._id);
+
+  //     const stories = await storyDB
+  //       .find({ patientId: { $in: patientIds } })
+  //       .populate("patientId") // Populate patientId
+  //       .populate("doctorId") // Populate doctorId
+  //       .lean()
+  //       .exec();
+
+  //     const storyIds = stories.map((story) => story._id);
+
+  //     const laboratoryResults = await Labaratory.find({
+  //       storyId: { $in: storyIds },
+  //     })
+  //       .populate({
+  //         path: "storyId",
+  //         populate: [
+  //           { path: "doctorId" }, // Nested populate for doctorId
+  //           { path: "patientId" }, // Nested populate for patientId
+  //         ],
+  //       })
+  //       .lean()
+  //       .exec();
+
+  //     // Attach laboratory results to stories
+  //     const storiesWithLab = stories.map((story) => ({
+  //       ...story,
+  //       laboratory: laboratoryResults.filter(
+  //         (lab) => lab.storyId._id.toString() === story._id.toString()
+  //       ),
+  //     }));
+
+  //     // Populate patientId and doctorId in roomStories
+  //     const roomStories = await RoomStoryModel.find({
+  //       patientId: { $in: patientIds },
+  //     })
+  //       .populate("patientId") // Populate patientId
+  //       .populate("doctorId") // Populate doctorId
+  //       .populate("roomId") // Optional: Populate roomId
+  //       .lean()
+  //       .exec();
+
+  //     const result = patients.map((patient) => ({
+  //       ...patient,
+  //       stories: storiesWithLab.filter(
+  //         (story) => story.patientId._id.toString() === patient._id.toString()
+  //       ),
+  //       roomStories: roomStories.filter(
+  //         (roomStory) =>
+  //           roomStory.patientId._id.toString() === patient._id.toString()
+  //       ),
+  //     }));
+
+  //     return res.status(200).json({
+  //       success: true,
+  //       data: result,
+  //     });
+  //   } catch (error) {
+  //     return res.status(500).json({
+  //       success: false,
+  //       message: "Error fetching patients",
+  //       error: error.message,
+  //     });
+  //   }
+  // }
+
+  // Backend: Updated getAllPatientsStory to accept startDate and endDate for lastVisit filtering
   async getAllPatientsStory(req, res) {
     try {
+      const { searchTerm = '', filterStatus = 'all', startDate, endDate } = req.query;
+
+      // Default to last 1 month if not provided
+      const now = new Date();
+      const defaultStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // 1 month ago
+      const defaultEnd = now;
+
+      const filterStart = startDate ? new Date(startDate) : defaultStart;
+      const filterEnd = endDate ? new Date(endDate) : defaultEnd;
+
       const patients = await PatientModel.find().lean().exec();
       const patientIds = patients.map((patient) => patient._id);
 
-      // Populate doctorId and patientId in stories
+      // Fetch stories
       const stories = await storyDB
         .find({ patientId: { $in: patientIds } })
-        .populate("patientId") // Populate patientId
-        .populate("doctorId") // Populate doctorId
-        // .populate("reabilitationServices.serviceId") // Populate reabilitationServices.service
+        .populate("patientId")
+        .populate("doctorId")
         .lean()
         .exec();
 
       const storyIds = stories.map((story) => story._id);
 
-      // Populate storyId and its nested doctorId and patientId in laboratory results
+      // Fetch laboratory results
       const laboratoryResults = await Labaratory.find({
         storyId: { $in: storyIds },
       })
         .populate({
           path: "storyId",
           populate: [
-            { path: "doctorId" }, // Nested populate for doctorId
-            { path: "patientId" }, // Nested populate for patientId
+            { path: "doctorId" },
+            { path: "patientId" },
           ],
         })
         .lean()
@@ -520,31 +601,168 @@ class StoryController {
         ),
       }));
 
-      // Populate patientId and doctorId in roomStories
+      // Fetch room stories
       const roomStories = await RoomStoryModel.find({
         patientId: { $in: patientIds },
       })
-        .populate("patientId") // Populate patientId
-        .populate("doctorId") // Populate doctorId
-        .populate("roomId") // Optional: Populate roomId
+        .populate("patientId")
+        .populate("doctorId")
+        .populate("roomId")
         .lean()
         .exec();
 
-      const result = patients.map((patient) => ({
-        ...patient,
-        stories: storiesWithLab.filter(
-          (story) => story.patientId._id.toString() === patient._id.toString()
-        ),
-        roomStories: roomStories.filter(
-          (roomStory) =>
-            roomStory.patientId._id.toString() === patient._id.toString()
-        ),
+      // Fetch choosed room services for all patients
+      const choosedRoomServices = await ChoosedRoomServices.find({ patientId: { $in: patientIds } })
+        .populate("services.serviceId", "name")
+        .populate("services.dailyTracking.workerId", "firstName lastName role")
+        .lean()
+        .exec();
+
+      // Fetch room services story (adjust model/query as needed)
+      const roomServicesStories = await RoomServicesStoryModel.find({ storyId: { $in: storyIds } })
+        .populate(/* relevant populates */)
+        .lean()
+        .exec();
+
+      // Attach room services to stories
+      const storiesWithRoomServices = storiesWithLab.map((story) => ({
+        ...story,
+        roomServices: roomServicesStories.filter(rs => rs.storyId.toString() === story._id.toString()) || [],
       }));
 
-      return res.status(200).json({
-        success: true,
-        data: result,
+      const storiesWithAll = storiesWithRoomServices;
+
+      // Map data to patients
+      const servicesByPatient = choosedRoomServices.reduce((acc, service) => {
+        acc[service.patientId.toString()] = service;
+        return acc;
+      }, {});
+
+      const roomStoriesByPatient = roomStories.reduce((acc, rs) => {
+        const pid = rs.patientId._id.toString();
+        if (!acc[pid]) acc[pid] = [];
+        acc[pid].push(rs);
+        return acc;
+      }, {});
+
+      const storiesByPatient = storiesWithAll.reduce((acc, story) => {
+        const pid = story.patientId._id.toString();
+        if (!acc[pid]) acc[pid] = [];
+        acc[pid].push(story);
+        return acc;
+      }, {});
+
+      // Process patients
+      let processedPatients = patients.map((patient) => {
+        const pidStr = patient._id.toString();
+        const patientStories = storiesByPatient[pidStr] || [];
+        const patientRoomStories = roomStoriesByPatient[pidStr] || [];
+        const patientServices = servicesByPatient[pidStr] || null;
+
+        const unpaidStoriesAmount = patientStories
+          .filter((story) => !story.payment_status)
+          .reduce((sum, story) => sum + (story.payment_amount || 0), 0);
+
+        const unpaidRoomDaysAmount = patientRoomStories
+          .flatMap((room) => room.paidDays || [])
+          .filter((day) => !day.isPaid)
+          .reduce((sum, day) => sum + (day.price || 0), 0);
+
+        const totalUnpaidAmount = unpaidStoriesAmount + unpaidRoomDaysAmount;
+
+        const hasActiveRoomStory = patientRoomStories.some((room) => room.active);
+        const hasUnpaidStories = patientStories.some((story) => !story.payment_status);
+        const hasUnpaidRoomDays = patientRoomStories.some((room) =>
+          (room.paidDays || []).some((day) => !day.isPaid)
+        );
+
+        const lastStoryDate = patientStories.length > 0
+          ? patientStories[patientStories.length - 1].createdAt
+          : null;
+        const lastRoomDate = patientRoomStories.length > 0
+          ? patientRoomStories[patientRoomStories.length - 1].createdAt
+          : null;
+        const lastVisit = lastStoryDate || lastRoomDate || patient.createdAt;
+
+        const hasDebt = patientRoomStories.some(story => {
+          if (!story.active) return false;
+          return story.paidDays?.some(day => day.isPaid === false);
+        });
+
+        return {
+          ...patient,
+          stories: patientStories,
+          roomStories: patientRoomStories,
+          choosedRoomServices: patientServices,
+          fullName: `${patient.firstname || ""} ${patient.lastname || ""}`.trim(),
+          hasActiveRoomStory,
+          hasUnpaidRoomDays,
+          hasUnpaidStories,
+          lastVisit,
+          totalUnpaidAmount,
+          treating: patient.treating ||
+            hasActiveRoomStory ||
+            (hasUnpaidStories && new Date(lastVisit) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
+          debtor: patient.debtor || hasUnpaidRoomDays || hasUnpaidStories || totalUnpaidAmount > 0 || hasDebt,
+        };
       });
+
+      // Filter by lastVisit date range first (before other filters)
+      processedPatients = processedPatients.filter((patient) => {
+        const patientLastVisit = new Date(patient.lastVisit);
+        return patientLastVisit >= filterStart && patientLastVisit <= filterEnd;
+      });
+
+      // Apply search filter
+      let filteredPatients = processedPatients;
+      if (searchTerm) {
+        const lowerSearch = searchTerm.toLowerCase();
+        filteredPatients = filteredPatients.filter((patient) => {
+          return patient.firstname.toLowerCase().includes(lowerSearch) ||
+            patient.lastname.toLowerCase().includes(lowerSearch) ||
+            patient.idNumber.toLowerCase().includes(lowerSearch) ||
+            patient.phone.includes(searchTerm) ||
+            patient.fullName.toLowerCase().includes(lowerSearch);
+        });
+      }
+
+      // Apply status filter
+      if (filterStatus !== 'all') {
+        filteredPatients = filteredPatients.filter((patient) => {
+          if (filterStatus === 'treating') return patient.treating;
+          if (filterStatus === 'debtor') return patient.debtor;
+          if (filterStatus === 'completed') return !patient.treating && !patient.debtor;
+          return true;
+        });
+      }
+
+      // Compute stats from filtered data (or full if needed; here from filtered for consistency)
+      const totalPatients = filteredPatients.length;
+      const treatingCount = filteredPatients.filter(p => p.treating).length;
+      const debtorCount = filteredPatients.filter(p => p.debtor).length;
+      const completedCount = filteredPatients.filter(p => !p.treating && !p.debtor).length;
+      const qarzdorlarCount = filteredPatients.filter(p => p.roomStories.some(story => {
+        if (!story.active) return false;
+        return story.paidDays?.some(day => day.isPaid === false);
+      })).length;
+
+      const result = {
+        success: true,
+        data: filteredPatients,
+        stats: {
+          total: totalPatients,
+          treating: treatingCount,
+          debtors: debtorCount,
+          completed: completedCount,
+          qarzdorlar: qarzdorlarCount,
+        },
+        dateRange: {
+          start: filterStart.toISOString().split('T')[0],
+          end: filterEnd.toISOString().split('T')[0],
+        },
+      };
+
+      return res.status(200).json(result);
     } catch (error) {
       return res.status(500).json({
         success: false,
